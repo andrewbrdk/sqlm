@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -49,6 +50,7 @@ type Msg struct {
 	Id       int       `json:"id"`
 	ChatId   int       `json:"chat_id"`
 	Position int       `json:"position"`
+	Type     int       `json:"type"`
 	Text     string    `json:"text"`
 	Created  time.Time `json:"created"`
 }
@@ -80,18 +82,15 @@ func initConfig() {
 
 func (S *Sqlm) initDB() {
 	var err error
-
 	firstRun := false
 	_, err = os.Stat(CONF.dbFile)
 	if errors.Is(err, os.ErrNotExist) {
 		firstRun = true
 	}
-
 	S.db, err = sql.Open("sqlite3", CONF.dbFile)
 	if err != nil {
 		log.Fatalf("cannot open sqlite db: %v", err)
 	}
-
 	_, err = S.db.Exec(`
         PRAGMA foreign_keys = ON;
 
@@ -106,16 +105,25 @@ func (S *Sqlm) initDB() {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
 			chat_id INTEGER NOT NULL,
 			position INTEGER NOT NULL DEFAULT 0,
+			type INT NOT NULL DEFAULT 0,
 			text TEXT NOT NULL,
 			created DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
+			FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE,
+			FOREIGN KEY(type) REFERENCES message_type(id)
         );
-    `)
 
+		CREATE INDEX IF NOT EXISTS idx_messages_chatid_position ON messages(chat_id, position);
+
+		CREATE TABLE IF NOT EXISTS message_type (
+			id INTEGER PRIMARY KEY,
+			type TEXT NOT NULL
+		);
+		INSERT OR IGNORE INTO message_type (id, type) 
+		VALUES (0, 'user'), (1, 'assistant');
+    `)
 	if err != nil {
 		log.Fatalf("Can't create tables: %v", err)
 	}
-
 	if firstRun {
 		infoLog.Println("Database created")
 	}
@@ -219,6 +227,7 @@ func (S *Sqlm) loadMessages(chatId int) []*Msg {
 			id,
 			chat_id,
 			position,
+			type,
 			text,
 			created
 		FROM messages
@@ -230,10 +239,10 @@ func (S *Sqlm) loadMessages(chatId int) []*Msg {
 	}
 	defer rows.Close()
 
-	var msgs []*Msg
+	msgs := make([]*Msg, 0)
 	for rows.Next() {
 		msg := &Msg{}
-		err := rows.Scan(&msg.Id, &msg.ChatId, &msg.Position, &msg.Text, &msg.Created)
+		err := rows.Scan(&msg.Id, &msg.ChatId, &msg.Position, &msg.Type, &msg.Text, &msg.Created)
 		if err != nil {
 			errorLog.Printf("loadMessages scan error: %v", err)
 			return nil
@@ -241,6 +250,54 @@ func (S *Sqlm) loadMessages(chatId int) []*Msg {
 		msgs = append(msgs, msg)
 	}
 	return msgs
+}
+
+func (S *Sqlm) CreateMessage(chatID int, msgType int, text string) error {
+	tx, err := S.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
+
+	var chatExists int
+	err = tx.QueryRow(`
+		SELECT EXISTS(SELECT 1 FROM chats WHERE id = ?)
+	`, chatID).Scan(&chatExists)
+	if chatExists == 0 {
+		errorLog.Printf("Chat with id=%d not found", chatID)
+		return errors.New("chat not found")
+	}
+	var nextPos int
+	err = tx.QueryRow(`
+		SELECT COALESCE(MAX(position), -1) + 1
+		FROM messages
+		WHERE chat_id = ?
+	`, chatID).Scan(&nextPos)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(`
+		INSERT INTO messages (chat_id, position, type, text)
+		VALUES (?, ?, ?, ?)
+	`, chatID, nextPos, msgType, text)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(`
+		UPDATE chats
+		SET updated = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, chatID)
+	if err != nil {
+		return err
+	}
+
+	err = tx.Commit()
+	return err
 }
 
 type Response struct {
@@ -257,6 +314,7 @@ func httpServer() {
 	http.HandleFunc("/delete", httpDeleteChat)
 	http.HandleFunc("/rename", httpRenameChat)
 	http.HandleFunc("/chat", httpChat)
+	http.HandleFunc("/message", httpCreateMessage)
 	log.Fatal(http.ListenAndServe(CONF.port, nil))
 }
 
@@ -476,4 +534,40 @@ func httpRenameChat(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(chats)
+}
+
+func httpCreateMessage(w http.ResponseWriter, r *http.Request) {
+	err, code, msg := httpCheckAuth(w, r)
+	if err != nil {
+		http.Error(w, msg, code)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ChatID int    `json:"chat_id"`
+		Type   int    `json:"type"`
+		Text   string `json:"text"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	req.Text = strings.TrimSpace(req.Text)
+	if req.ChatID <= 0 || req.Text == "" {
+		http.Error(w, "Missing or invalid chat_id/text", http.StatusBadRequest)
+		return
+	}
+	if err := SQLM.CreateMessage(req.ChatID, req.Type, req.Text); err != nil {
+		http.Error(w, "Failed to save message", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(Response{
+		Status:  "ok",
+		Message: "saved",
+	})
 }
