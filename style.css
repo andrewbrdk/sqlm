@@ -294,5 +294,54 @@ x-sqlm {
 				line-height: 1.35;
 			}
 		}
+		#composer {
+			flex: 0 0 auto;
+			display: flex;
+			gap: 0.75rem;
+			align-items: flex-end;
+			border-top: 1px solid #e3e3e3;
+			padding: 0.75rem 0 1rem;
+		}
+		#composer[hidden] {
+			display: none;
+		}
+		#messageinput {
+			flex: 1 1 auto;
+			min-height: 2.5rem;
+			max-height: 12rem;
+			resize: vertical;
+			font-family: inherit;
+			font-size: 1rem;
+			padding: 0.5rem 0.75rem;
+			border: 1px solid #bbb;
+			border-radius: 8px;
+			outline: none;
+		}
+		#messageinput:focus {
+			border-color: #666;
+		}
+		.composer-actions {
+			flex: 0 0 auto;
+			display: flex;
+			flex-direction: column;
+			align-items: flex-end;
+			gap: 0.35rem;
+		}
+		#sendmessage {
+			height: 2.5rem;
+			padding: 0 0.9rem;
+			border: 1px solid black;
+			background: white;
+			border-radius: 8px;
+			cursor: pointer;
+		}
+		#sendmessage:disabled {
+			opacity: 0.6;
+			cursor: not-allowed;
+		}
+		#messageerror {
+			color: #b00020;
+			font-size: 0.9rem;
+		}
 	}
 }

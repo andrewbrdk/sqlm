@@ -95,6 +95,11 @@ class XSqlm extends HTMLElement {
 	#ulchats = null;
 	#chattitle = null;
 	#messages = null;
+	#composer = null;
+	#messageinput = null;
+	#sendmessage = null;
+	#messageerror = null;
+	#isSendingMessage = false;
 	#selected = null;
 	#resizer = null;
 	#isResizing = false;
@@ -122,11 +127,22 @@ class XSqlm extends HTMLElement {
 					<input id="chattitle" type="text">
 				</div>
 				<div id="messages"></div>
+				<div id="composer" hidden>
+					<textarea id="messageinput" placeholder="Type a message..."></textarea>
+					<div class="composer-actions">
+						<button id="sendmessage" type="button">Send</button>
+						<div id="messageerror" hidden></div>
+					</div>
+				</div>
 			</div>`;
 		this.#aside = this.querySelector('aside');
 		this.#ulchats = this.querySelector('#chats');
 		this.#chattitle = this.querySelector('#chattitle');
 		this.#messages = this.querySelector('#messages');
+		this.#composer = this.querySelector('#composer');
+		this.#messageinput = this.querySelector('#messageinput');
+		this.#sendmessage = this.querySelector('#sendmessage');
+		this.#messageerror = this.querySelector('#messageerror');
 		this.#resizer = this.querySelector(".resizer");
 	}
 
@@ -146,9 +162,11 @@ class XSqlm extends HTMLElement {
 
 	async updateMessages() {
 		if (!this.#selected) {
+			this.#composer.hidden = true;
 			this.#messages.innerHTML = `<div class="empty-state">Select or create a chat.</div>`;
 			return;
 		}
+		this.#composer.hidden = false;
 		const res = await fetch(`/chat?id=${encodeURIComponent(this.#selected)}`);
 		if (!res.ok) {
 			this.#messages.innerHTML = `<div class="empty-state">Failed to load messages.</div>`;
@@ -165,6 +183,7 @@ class XSqlm extends HTMLElement {
 				<div class="msg-body">${escapeHTML(msg.text)}</div>
 			</article>
 		`).join("");
+		this.#messages.scrollTop = this.#messages.scrollHeight;
 	}
 
 	async updateChats() {
@@ -262,12 +281,24 @@ class XSqlm extends HTMLElement {
 			clearTimeout(renameTimer);
 			renameTimer = setTimeout(() => {this.saveTitleChange();}, 400);
 		};
+
+		this.#sendmessage.onclick = async () => {
+			await this.sendMessage();
+		};
+
+		this.#messageinput.onkeydown = async (e) => {
+			if (e.key === "Enter" && !e.shiftKey) {
+				e.preventDefault();
+				await this.sendMessage();
+			}
+		};
 	}
 
 	unbindEvents() {
 		this.onclick = null;
 		this.querySelectorAll('button').forEach(btn => btn.onclick = null);
 		this.querySelectorAll("aside li").forEach(li => li.onclick = null);
+		if (this.#messageinput) this.#messageinput.onkeydown = null;
 	}
 
 	updateTitle() {
@@ -347,6 +378,34 @@ class XSqlm extends HTMLElement {
 		const chats = await res.json();
 		this.#chats = chats;
 		await this.render();
+	}
+
+	async sendMessage() {
+		if (!this.#selected || this.#isSendingMessage) return;
+		const text = this.#messageinput.value.trim();
+		if (!text) return;
+		this.#isSendingMessage = true;
+		this.#messageinput.disabled = true;
+		this.#sendmessage.disabled = true;
+		this.#messageerror.hidden = true;
+		this.#messageerror.textContent = "";
+		try {
+			const res = await fetch('/message', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ chat_id: this.#selected, type: 0, text }),
+			});
+			if (!res.ok) throw new Error("Failed to send");
+			this.#messageinput.value = "";
+			await this.updateMessages();
+		} catch (e) {
+			this.#messageerror.textContent = "Failed to send message.";
+			this.#messageerror.hidden = false;
+		} finally {
+			this.#isSendingMessage = false;
+			this.#messageinput.disabled = false;
+			this.#sendmessage.disabled = false;
+		}
 	}
 }
 
