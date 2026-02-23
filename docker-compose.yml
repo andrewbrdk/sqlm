@@ -1,0 +1,53 @@
+services:
+  sqlm:
+    image: sqlm
+    container_name: sqlm_web
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    ports:
+      # host:container
+      - "8080:8080"
+    volumes:
+      #- ./sqlm.toml:/app/sqlm.toml
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    #environment:
+      #SQLM_CONF: /app/sqlm.toml
+      #SQLM_PORT: 8080
+      #SQLM_PASSWORD: "qwerty"
+
+  postgres:
+    image: postgres:16
+    container_name: sqlm_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: pguser
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: sqlm
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pguser -d sqlm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgweb:
+    image: sosedoff/pgweb:latest
+    container_name: sqlm_pgweb
+    restart: always
+    ports:
+      - "8081:8081"
+    environment:
+      PGWEB_DATABASE_URL: postgres://pguser:password123@postgres:5432/sqlm?sslmode=disable
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
