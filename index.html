@@ -380,6 +380,18 @@ class XSqlm extends HTMLElement {
 		this.#messageerror.hidden = true;
 		this.#messageerror.textContent = "";
 
+		if (this.#messages.querySelector(".empty-state")) this.#messages.innerHTML = "";
+		this.#messages.insertAdjacentHTML(
+			"beforeend",
+			`<article class="msg msg-user msg-waiting"><p>${escapeHTML(text)}</p></article>`
+		);
+		this.#messages.insertAdjacentHTML(
+			"beforeend",
+			`<article class="msg msg-assistant msg-waiting"><p><em>Waiting for response...</em></p></article>`
+		);
+		this.#messages.scrollTop = this.#messages.scrollHeight;
+		this.#messageinput.value = "";
+
 		const res = await fetch('/message', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
