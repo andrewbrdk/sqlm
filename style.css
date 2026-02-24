@@ -289,7 +289,7 @@ x-sqlm {
 				justify-content: flex-start;
 			}
 			.msg p {
-				max-width: min(78%, 780px);
+				max-width: min(80%, 800px);
 				margin: 0;
 				padding: 10px 12px;
 				border-radius: 10px;
@@ -301,6 +301,8 @@ x-sqlm {
 			}
 			.msg-user p {
 				background: #f4f4f4;
+				min-width: 65%;
+				margin-left: auto;
 			}
 		}
 		#composer {
