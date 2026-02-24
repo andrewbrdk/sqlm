@@ -1,4 +1,4 @@
-FROM golang:1.26-alpine
+FROM golang:1.26
 
 COPY main.go go.mod index.html style.css /app/
 

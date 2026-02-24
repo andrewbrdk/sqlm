@@ -178,11 +178,14 @@ class XSqlm extends HTMLElement {
 			this.#messages.innerHTML = `<div class="empty-state">No messages in this chat yet.</div>`;
 			return;
 		}
-		this.#messages.innerHTML = msgs.map((msg) => `
-			<article class="msg">
-				<div class="msg-body">${escapeHTML(msg.text)}</div>
-			</article>
-		`).join("");
+		this.#messages.innerHTML = msgs.map((msg) => {
+			const roleClass = msg.type === 1 ? "msg-assistant" : "msg-user";
+			return `
+				<article class="msg ${roleClass}">
+					<p>${escapeHTML(msg.text)}</p>
+				</article>
+			`;
+		}).join("");
 		this.#messages.scrollTop = this.#messages.scrollHeight;
 	}
 
@@ -314,19 +317,6 @@ class XSqlm extends HTMLElement {
 		return null;
 	}
 
-	// async savePage() {
-	// 	if (!this.#selected) return;
-	// 	const delta = this.#quill.getContents();
-	// 	const res = await fetch('/save', {
-	// 		method: 'POST',
-	// 		headers: { 'Content-Type': 'application/json' },
-	// 		body: JSON.stringify({id: this.#selected, delta: delta})
-	// 	});
-	// 	if (!res.ok) {
-	// 		console.error("Failed to auto-save page:", this.#selected);
-	// 	}
-	// }
-
 	async createChat(title, parentId) {
 		const res = await fetch('/create', {
 			method: 'POST',
@@ -389,23 +379,22 @@ class XSqlm extends HTMLElement {
 		this.#sendmessage.disabled = true;
 		this.#messageerror.hidden = true;
 		this.#messageerror.textContent = "";
-		try {
-			const res = await fetch('/message', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ chat_id: this.#selected, type: 0, text }),
-			});
-			if (!res.ok) throw new Error("Failed to send");
-			this.#messageinput.value = "";
-			await this.updateMessages();
-		} catch (e) {
+
+		const res = await fetch('/message', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ chat_id: this.#selected, text }),
+		});
+		if (!res.ok) {
 			this.#messageerror.textContent = "Failed to send message.";
 			this.#messageerror.hidden = false;
-		} finally {
-			this.#isSendingMessage = false;
-			this.#messageinput.disabled = false;
-			this.#sendmessage.disabled = false;
 		}
+		this.#messageinput.value = "";
+		await this.updateMessages();
+
+		this.#isSendingMessage = false;
+		this.#messageinput.disabled = false;
+		this.#sendmessage.disabled = false;
 	}
 }
 

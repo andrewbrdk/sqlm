@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"database/sql"
 	"embed"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -33,9 +35,11 @@ type Sqlm struct {
 }
 
 type Config struct {
-	port     string
-	dbFile   string
-	password string
+	port            string
+	dbFile          string
+	password        string
+	openRouterKey   string
+	openRouterModel string
 }
 
 type Chat struct {
@@ -53,6 +57,22 @@ type Msg struct {
 	Type     int       `json:"type"`
 	Text     string    `json:"text"`
 	Created  time.Time `json:"created"`
+}
+
+type LLMMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type openRouterRequest struct {
+	Model    string       `json:"model"`
+	Messages []LLMMessage `json:"messages"`
+}
+
+type openRouterResponse struct {
+	Choices []struct {
+		Message LLMMessage `json:"message"`
+	} `json:"choices"`
 }
 
 func main() {
@@ -78,6 +98,11 @@ func initConfig() {
 		CONF.dbFile = dbFile
 	}
 	CONF.password = os.Getenv("SQLM_PASSWORD")
+	CONF.openRouterKey = strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY"))
+	CONF.openRouterModel = strings.TrimSpace(os.Getenv("OPENROUTER_MODEL"))
+	if CONF.openRouterKey == "" || CONF.openRouterModel == "" {
+		log.Fatal("OPENROUTER_API_KEY and OPENROUTER_MODEL are required")
+	}
 }
 
 func (S *Sqlm) initDB() {
@@ -305,6 +330,64 @@ type Response struct {
 	Message string `json:"message,omitempty"`
 }
 
+func buildLLMMessages(chatID int) []LLMMessage {
+	out := []LLMMessage{
+		{
+			Role:    "system",
+			Content: "You are a concise SQL-focused assistant. Use the conversation context, provide correct SQL guidance, and ask clarifying questions when requirements are ambiguous.",
+		},
+	}
+	msgs := SQLM.loadMessages(chatID)
+	for _, m := range msgs {
+		role := "user"
+		if m.Type == 1 {
+			role = "assistant"
+		}
+		out = append(out, LLMMessage{
+			Role:    role,
+			Content: m.Text,
+		})
+	}
+	return out
+}
+
+func callOpenRouter(messages []LLMMessage) (string, error) {
+	reqBody := openRouterRequest{
+		Model:    CONF.openRouterModel,
+		Messages: messages,
+	}
+	b, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequest(http.MethodPost, "https://openrouter.ai/api/v1/chat/completions", bytes.NewReader(b))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+CONF.openRouterKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("openrouter status: %d", resp.StatusCode)
+	}
+	var orResp openRouterResponse
+	err = json.NewDecoder(resp.Body).Decode(&orResp)
+	if err != nil {
+		return "", err
+	}
+	if len(orResp.Choices) == 0 || strings.TrimSpace(orResp.Choices[0].Message.Content) == "" {
+		return "", errors.New("empty assistant response")
+	}
+	return strings.TrimSpace(orResp.Choices[0].Message.Content), nil
+}
+
 func httpServer() {
 	http.HandleFunc("/", httpIndex)
 	http.Handle("/style.css", http.FileServer(http.FS(embedded)))
@@ -314,7 +397,7 @@ func httpServer() {
 	http.HandleFunc("/delete", httpDeleteChat)
 	http.HandleFunc("/rename", httpRenameChat)
 	http.HandleFunc("/chat", httpChat)
-	http.HandleFunc("/message", httpCreateMessage)
+	http.HandleFunc("/message", httpUserMessage)
 	log.Fatal(http.ListenAndServe(CONF.port, nil))
 }
 
@@ -536,7 +619,7 @@ func httpRenameChat(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(chats)
 }
 
-func httpCreateMessage(w http.ResponseWriter, r *http.Request) {
+func httpUserMessage(w http.ResponseWriter, r *http.Request) {
 	err, code, msg := httpCheckAuth(w, r)
 	if err != nil {
 		http.Error(w, msg, code)
@@ -546,13 +629,12 @@ func httpCreateMessage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
 	var req struct {
 		ChatID int    `json:"chat_id"`
-		Type   int    `json:"type"`
 		Text   string `json:"text"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	err = json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
@@ -561,13 +643,24 @@ func httpCreateMessage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing or invalid chat_id/text", http.StatusBadRequest)
 		return
 	}
-	if err := SQLM.CreateMessage(req.ChatID, req.Type, req.Text); err != nil {
+	err = SQLM.CreateMessage(req.ChatID, 0, req.Text)
+	if err != nil {
+		errorLog.Printf("Failed to save user message: %v", err)
 		http.Error(w, "Failed to save message", http.StatusInternalServerError)
 		return
 	}
+	assistantText, err := callOpenRouter(buildLLMMessages(req.ChatID))
+	if err != nil {
+		errorLog.Printf("OpenRouter request failed: %v", err)
+		http.Error(w, "Assistant unavailable", http.StatusBadGateway)
+		return
+	}
+	err = SQLM.CreateMessage(req.ChatID, 1, assistantText)
+	if err != nil {
+		errorLog.Printf("Failed to save assistant message: %v", err)
+		http.Error(w, "Failed to save assistant message", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Response{
-		Status:  "ok",
-		Message: "saved",
-	})
+	w.WriteHeader(http.StatusOK)
 }

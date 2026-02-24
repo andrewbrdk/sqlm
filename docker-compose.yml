@@ -15,7 +15,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    #environment:
+    environment:
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL}
       #SQLM_CONF: /app/sqlm.toml
       #SQLM_PORT: 8080
       #SQLM_PASSWORD: "qwerty"

@@ -274,24 +274,33 @@ x-sqlm {
 			border: none;
 			font-size: 1rem;
 			margin-left: 0;
+			display: flex;
+			flex-direction: column;
+			gap: 10px;
 
 			.empty-state {
 				color: #666;
 				margin-top: 1rem;
 				font-style: italic;
 			}
-
 			.msg {
-				margin: 0.75rem 0;
-				padding: 0.75rem 1rem;
-				border: 1px solid #e3e3e3;
-				border-radius: 10px;
+				width: 100%;
+				display: flex;
+				justify-content: flex-start;
 			}
-
-			.msg-body {
+			.msg p {
+				max-width: min(78%, 780px);
+				margin: 0;
+				padding: 10px 12px;
+				border-radius: 10px;
 				white-space: pre-wrap;
 				word-break: break-word;
 				line-height: 1.35;
+				border: none;
+				background: transparent;
+			}
+			.msg-user p {
+				background: #f4f4f4;
 			}
 		}
 		#composer {
