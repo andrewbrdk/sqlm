@@ -56,6 +56,8 @@ type Msg struct {
 	Position int       `json:"position"`
 	Type     int       `json:"type"`
 	Text     string    `json:"text"`
+	Outline  string    `json:"outline"`
+	SQL      string    `json:"sql"`
 	Created  time.Time `json:"created"`
 }
 
@@ -65,9 +67,33 @@ type LLMMessage struct {
 }
 
 type openRouterRequest struct {
-	Model    string       `json:"model"`
-	Messages []LLMMessage `json:"messages"`
+	Model          string          `json:"model"`
+	Messages       []LLMMessage    `json:"messages"`
+	ResponseFormat json.RawMessage `json:"response_format"`
 }
+
+const openRouterResponseFormat = `{
+  "type": "json_schema",
+  "json_schema": {
+    "name": "SQLResponse",
+    "strict": true,
+    "schema": {
+      "type": "object",
+      "properties": {
+        "outline": {
+          "type": "string",
+          "description": "A brief outline of the SQL query logic."
+        },
+        "sql": {
+          "type": "string",
+          "description": "The SQL query to execute."
+        }
+      },
+      "required": ["outline", "sql"],
+      "additionalProperties": false
+    }
+  }
+}`
 
 type openRouterResponse struct {
 	Choices []struct {
@@ -132,6 +158,8 @@ func (S *Sqlm) initDB() {
 			position INTEGER NOT NULL DEFAULT 0,
 			type INT NOT NULL DEFAULT 0,
 			text TEXT NOT NULL,
+			outline TEXT NOT NULL DEFAULT '',
+			sql TEXT NOT NULL DEFAULT '',
 			created DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE,
 			FOREIGN KEY(type) REFERENCES message_type(id)
@@ -254,6 +282,8 @@ func (S *Sqlm) loadMessages(chatId int) []*Msg {
 			position,
 			type,
 			text,
+			outline,
+			sql,
 			created
 		FROM messages
 		WHERE chat_id = ?
@@ -267,7 +297,7 @@ func (S *Sqlm) loadMessages(chatId int) []*Msg {
 	msgs := make([]*Msg, 0)
 	for rows.Next() {
 		msg := &Msg{}
-		err := rows.Scan(&msg.Id, &msg.ChatId, &msg.Position, &msg.Type, &msg.Text, &msg.Created)
+		err := rows.Scan(&msg.Id, &msg.ChatId, &msg.Position, &msg.Type, &msg.Text, &msg.Outline, &msg.SQL, &msg.Created)
 		if err != nil {
 			errorLog.Printf("loadMessages scan error: %v", err)
 			return nil
@@ -277,7 +307,7 @@ func (S *Sqlm) loadMessages(chatId int) []*Msg {
 	return msgs
 }
 
-func (S *Sqlm) CreateMessage(chatID int, msgType int, text string) error {
+func (S *Sqlm) CreateMessage(chatID int, msgType int, text string, outline string, sql string) error {
 	tx, err := S.db.Begin()
 	if err != nil {
 		return err
@@ -306,9 +336,9 @@ func (S *Sqlm) CreateMessage(chatID int, msgType int, text string) error {
 		return err
 	}
 	_, err = tx.Exec(`
-		INSERT INTO messages (chat_id, position, type, text)
-		VALUES (?, ?, ?, ?)
-	`, chatID, nextPos, msgType, text)
+		INSERT INTO messages (chat_id, position, type, text, outline, sql)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, chatID, nextPos, msgType, text, outline, sql)
 	if err != nil {
 		return err
 	}
@@ -333,8 +363,13 @@ type Response struct {
 func buildLLMMessages(chatID int) []LLMMessage {
 	out := []LLMMessage{
 		{
-			Role:    "system",
-			Content: "You are a concise SQL-focused assistant. Use the conversation context, provide correct SQL guidance, and ask clarifying questions when requirements are ambiguous.",
+			Role: "system",
+			Content: `You are a SQL assistant. Answer briefly in the specified format.
+				Return ONLY a valid JSON object with exactly two keys: 'outline' and 'sql'.
+				'outline' must be a brief description of the query logic.
+				'sql' must be the executable SQL query.
+				"Do not include markdown, code fences, explanations, or any extra keys.
+				"If requirements are ambiguous, still return valid JSON and put clarification needs in 'outline'.`,
 		},
 	}
 	msgs := SQLM.loadMessages(chatID)
@@ -353,8 +388,9 @@ func buildLLMMessages(chatID int) []LLMMessage {
 
 func callOpenRouter(messages []LLMMessage) (string, error) {
 	reqBody := openRouterRequest{
-		Model:    CONF.openRouterModel,
-		Messages: messages,
+		Model:          CONF.openRouterModel,
+		Messages:       messages,
+		ResponseFormat: json.RawMessage([]byte(openRouterResponseFormat)),
 	}
 	b, err := json.Marshal(reqBody)
 	if err != nil {
@@ -380,6 +416,7 @@ func callOpenRouter(messages []LLMMessage) (string, error) {
 	var orResp openRouterResponse
 	err = json.NewDecoder(resp.Body).Decode(&orResp)
 	if err != nil {
+		errorLog.Printf("Failed to decode OpenRouter response: %v", err)
 		return "", err
 	}
 	if len(orResp.Choices) == 0 || strings.TrimSpace(orResp.Choices[0].Message.Content) == "" {
@@ -643,19 +680,32 @@ func httpUserMessage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing or invalid chat_id/text", http.StatusBadRequest)
 		return
 	}
-	err = SQLM.CreateMessage(req.ChatID, 0, req.Text)
+	err = SQLM.CreateMessage(req.ChatID, 0, req.Text, "", "")
 	if err != nil {
 		errorLog.Printf("Failed to save user message: %v", err)
 		http.Error(w, "Failed to save message", http.StatusInternalServerError)
 		return
 	}
+
 	assistantText, err := callOpenRouter(buildLLMMessages(req.ChatID))
 	if err != nil {
 		errorLog.Printf("OpenRouter request failed: %v", err)
 		http.Error(w, "Assistant unavailable", http.StatusBadGateway)
 		return
 	}
-	err = SQLM.CreateMessage(req.ChatID, 1, assistantText)
+	var parsed struct {
+		Outline string `json:"outline"`
+		SQL     string `json:"sql"`
+	}
+	err = json.Unmarshal([]byte(assistantText), &parsed)
+	if err != nil {
+		errorLog.Printf("Failed to parse assistant response: %v", err)
+		http.Error(w, "Assistant returned invalid JSON", http.StatusBadGateway)
+		return
+	}
+	outline := strings.TrimSpace(parsed.Outline)
+	sql := strings.TrimSpace(parsed.SQL)
+	err = SQLM.CreateMessage(req.ChatID, 1, assistantText, outline, sql)
 	if err != nil {
 		errorLog.Printf("Failed to save assistant message: %v", err)
 		http.Error(w, "Failed to save assistant message", http.StatusInternalServerError)
