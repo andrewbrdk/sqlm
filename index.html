@@ -155,9 +155,9 @@ class XSqlm extends HTMLElement {
 
 	async render() {
 		this.updateChats();
-		this.bindEvents();
 		this.updateTitle();
 		await this.updateMessages();
+		this.bindEvents();
 	}
 
 	async updateMessages() {
@@ -211,6 +211,12 @@ class XSqlm extends HTMLElement {
 					${sql ? `
 						<section class="sql">
 							<pre><code>${escapeHTML(sql)}</code></pre>
+							<div class="sql-actions">
+								<button class="execute-sql" data-chat-id=${escapeHTML(msg.chat_id)} data-message-id=${escapeHTML(msg.id)}>
+									Execute
+								</button>
+							</div>
+							<div class="sql-exec-result"></div>
 						</section>
 					` : ""}
 				</div>
@@ -317,13 +323,22 @@ class XSqlm extends HTMLElement {
 		this.#sendmessage.onclick = async () => {
 			await this.sendMessage();
 		};
-
 		this.#messageinput.onkeydown = async (e) => {
 			if (e.key === "Enter" && !e.shiftKey) {
 				e.preventDefault();
 				await this.sendMessage();
 			}
 		};
+
+		this.querySelectorAll(".execute-sql").forEach(btn => {
+			btn.onclick = async () => {
+				const chatId = Number(btn.dataset.chatId);
+				const messageId = Number(btn.dataset.messageId);
+				const resultEl = btn.closest(".sql")?.querySelector(".sql-exec-result");
+				if (!chatId || !messageId || !resultEl) return;
+				await this.executeSQLForMessage(chatId, messageId, btn, resultEl);
+			};
+		});
 	}
 
 	unbindEvents() {
@@ -430,12 +445,71 @@ class XSqlm extends HTMLElement {
 			this.#messageerror.textContent = "Failed to send message.";
 			this.#messageerror.hidden = false;
 		}
-		this.#messageinput.value = "";
-		await this.updateMessages();
-
 		this.#isSendingMessage = false;
 		this.#messageinput.disabled = false;
 		this.#sendmessage.disabled = false;
+		await this.render();
+	}
+
+	async executeSQLForMessage(chatId, messageId, button, resultEl) {
+		button.disabled = true;
+		const oldLabel = button.textContent;
+		button.textContent = "Executing...";
+		resultEl.classList.remove("error");
+		resultEl.innerHTML = "";
+
+		try {
+			const res = await fetch("/execute", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
+			});
+			if (!res.ok) {
+				const txt = await res.text();
+				this.renderExecError(resultEl, txt || "Execution failed.");
+				return;
+			}
+			const payload = await res.json();
+			const rows = Array.isArray(payload.rows) ? payload.rows : [];
+			this.renderExecRows(resultEl, rows);
+		} catch {
+			this.renderExecError(resultEl, "Execution failed.");
+		} finally {
+			this.#messages.scrollTop = this.#messages.scrollHeight;
+			button.disabled = false;
+			button.textContent = oldLabel;
+		}
+	}
+
+	renderExecError(resultEl, message) {
+		resultEl.classList.add("error");
+		resultEl.innerHTML = `<div>${escapeHTML(message)}</div>`;
+	}
+
+	renderExecRows(resultEl, rows) {
+		resultEl.classList.remove("error");
+		if (rows.length === 0) {
+			resultEl.innerHTML = `<div class="sql-empty">No rows returned.</div>`;
+			return;
+		}
+		const cols = Object.keys(rows[0] ?? {});
+		const head = cols.map((c) => `<th>${escapeHTML(c)}</th>`).join("");
+		const body = rows.map((r) => {
+			const tds = cols.map((c) => {
+				const v = r[c];
+				const s = v == null ? "NULL" : (typeof v === "object" ? JSON.stringify(v) : String(v));
+				return `<td>${escapeHTML(s)}</td>`;
+			}).join("");
+			return `<tr>${tds}</tr>`;
+		}).join("");
+		resultEl.innerHTML = `
+			<div class="sql-result-table-wrap">
+				<table class="sql-result-table">
+					<thead><tr>${head}</tr></thead>
+					<tbody>${body}</tbody>
+				</table>
+			</div>
+		`;
 	}
 }
 

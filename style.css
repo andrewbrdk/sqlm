@@ -323,6 +323,46 @@ x-sqlm {
 				font-family: ui-monospace, monospace;
 				font-size: 0.92rem;
 			}
+			/* style.css additions */
+			.sql-actions {
+				margin-top: 0.5rem;
+			}
+			.execute-sql {
+				height: 2rem;
+				padding: 0 0.75rem;
+				border: 1px solid black;
+				background: white;
+				border-radius: 6px;
+				cursor: pointer;
+			}
+			.execute-sql:disabled {
+				opacity: 0.6;
+				cursor: not-allowed;
+			}
+			.sql-exec-result {
+				margin-top: 0.5rem;
+			}
+			.sql-exec-result.error {
+				color: #b00020;
+			}
+			.sql-result-table-wrap {
+				overflow-x: auto;
+			}
+			.sql-result-table {
+				border-collapse: collapse;
+				min-width: 320px;
+			}
+			.sql-result-table th,
+			.sql-result-table td {
+				border: 1px solid #ddd;
+				padding: 0.35rem 0.5rem;
+				text-align: left;
+				font-size: 0.9rem;
+			}
+			.sql-empty {
+				color: #666;
+				font-style: italic;
+			}
 		}
 		#composer {
 			flex: 0 0 auto;
