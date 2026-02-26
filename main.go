@@ -12,13 +12,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 //go:embed index.html style.css
@@ -43,6 +43,7 @@ type Config struct {
 	openRouterModel string
 	execDB          string
 	logFile         string
+	contextDir      string
 }
 
 type LLMMessage struct {
@@ -86,11 +87,12 @@ type openRouterResponse struct {
 }
 
 type LLMLogEntry struct {
-	ID        string    `json:"id"`
-	Timestamp time.Time `json:"timestamp"`
-	UserText  string    `json:"user_text"`
-	Outline   string    `json:"outline"`
-	SQL       string    `json:"sql"`
+	ID        string       `json:"id"`
+	Timestamp time.Time    `json:"timestamp"`
+	UserText  string       `json:"user_text"`
+	Outline   string       `json:"outline"`
+	SQL       string       `json:"sql"`
+	Context   []LLMMessage `json:"context"`
 }
 
 func main() {
@@ -123,6 +125,10 @@ func initConfig() {
 	if CONF.logFile == "" {
 		errorLog.Printf("SQLM_LOG_FILE is not set. Logging is disabled.")
 	}
+	CONF.contextDir = os.Getenv("SQLM_CONTEXT_DIR")
+	if CONF.contextDir == "" {
+		errorLog.Printf("No context directory configured.")
+	}
 }
 
 func generateRandomKey(size int) []byte {
@@ -153,52 +159,6 @@ func (S *Sqlm) initExecConn() {
 	S.execConn = conn
 }
 
-// func (S *Sqlm) CreateMessage(chatID int, msgType int, text string, outline string, sql string) error {
-// 	tx, err := S.db.Begin()
-// 	if err != nil {
-// 		return err
-// 	}
-// 	defer func() {
-// 		if err != nil {
-// 			tx.Rollback()
-// 		}
-// 	}()
-// 	var chatExists int
-// 	err = tx.QueryRow(`
-// 		SELECT EXISTS(SELECT 1 FROM chats WHERE id = ?)
-// 	`, chatID).Scan(&chatExists)
-// 	if chatExists == 0 {
-// 		errorLog.Printf("Chat with id=%d not found", chatID)
-// 		return errors.New("chat not found")
-// 	}
-// 	var nextPos int
-// 	err = tx.QueryRow(`
-// 		SELECT COALESCE(MAX(position), -1) + 1
-// 		FROM messages
-// 		WHERE chat_id = ?
-// 	`, chatID).Scan(&nextPos)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	_, err = tx.Exec(`
-// 		INSERT INTO messages (chat_id, position, type, text, outline, sql)
-// 		VALUES (?, ?, ?, ?, ?, ?)
-// 	`, chatID, nextPos, msgType, text, outline, sql)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	_, err = tx.Exec(`
-// 		UPDATE chats
-// 		SET updated = CURRENT_TIMESTAMP
-// 		WHERE id = ?
-// 	`, chatID)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	err = tx.Commit()
-// 	return err
-// }
-
 func buildLLMMessages(msg string) []LLMMessage {
 	out := []LLMMessage{
 		{
@@ -211,11 +171,45 @@ func buildLLMMessages(msg string) []LLMMessage {
 				"If requirements are ambiguous, still return valid JSON and put clarification needs in 'outline'.`,
 		},
 	}
+	contextMessages := loadContext(CONF.contextDir)
+	for _, contextMsg := range contextMessages {
+		out = append(out, LLMMessage{
+			Role:    "system",
+			Content: contextMsg,
+		})
+	}
 	out = append(out, LLMMessage{
 		Role:    "user",
 		Content: msg,
 	})
 	return out
+}
+
+func loadContext(dirPath string) []string {
+	if dirPath == "" {
+		return []string{}
+	}
+	//todo: search
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		infoLog.Printf("Context directory not found or not readable: %s", dirPath)
+		return []string{}
+	}
+	var messages []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		filePath := filepath.Join(dirPath, entry.Name())
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			errorLog.Printf("Failed to read context file %s: %v", filePath, err)
+			continue
+		}
+		messages = append(messages, string(data))
+		infoLog.Printf("Loaded context from %s", entry.Name())
+	}
+	return messages
 }
 
 func callOpenRouter(messages []LLMMessage) (string, error) {
@@ -454,14 +448,8 @@ func httpUserMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Text = strings.TrimSpace(req.Text)
-	// err = SQLM.CreateMessage(req.ChatID, 0, req.Text, "", "")
-	// if err != nil {
-	// 	errorLog.Printf("Failed to save user message: %v", err)
-	// 	http.Error(w, "Failed to save message", http.StatusInternalServerError)
-	// 	return
-	// }
-
-	assistantText, err := callOpenRouter(buildLLMMessages(req.Text))
+	msgs := buildLLMMessages(req.Text)
+	assistantText, err := callOpenRouter(msgs)
 	if err != nil {
 		errorLog.Printf("OpenRouter request failed: %v", err)
 		http.Error(w, "Assistant unavailable", http.StatusBadGateway)
@@ -486,7 +474,9 @@ func httpUserMessage(w http.ResponseWriter, r *http.Request) {
 		UserText:  req.Text,
 		Outline:   outline,
 		SQL:       sql,
+		Context:   msgs,
 	})
+	//todo: log on failure
 	//todo: error is lost
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
