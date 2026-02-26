@@ -32,13 +32,12 @@ class XMain extends HTMLElement {
 	}
 
 	async renderPage() {
-		let res = await fetch('/chats');
+		let res = await fetch('/checkauth');
 		const statusCode = res.status;
 		if (statusCode == 200) {
 			this.#sqlm.hidden = false;
 			this.#login.hidden = true;
-			let p = await res.json();
-			this.#sqlm.init(p);
+			this.#sqlm.init();
 		} else if (statusCode == 401) { // unauthorized
 			this.#login.hidden = false;
 			this.#sqlm.hidden = true;
@@ -52,7 +51,7 @@ class XLogin extends HTMLElement {
 	constructor() {
 		super();
 		this.innerHTML = `
-			<h1>Scrawl</h1>
+			<h1>SQLM</h1>
 			<form>
 				<label for="password">Password:</label>
 				<input type="password" id="password" name="password" required>
@@ -90,236 +89,44 @@ class XLogin extends HTMLElement {
 }
 
 class XSqlm extends HTMLElement {
-	#aside = null;
-	#chats = null;
-	#ulchats = null;
-	#chattitle = null;
-	#messages = null;
-	#composer = null;
+	#llmresp = null;
 	#messageinput = null;
 	#sendmessage = null;
 	#messageerror = null;
 	#isSendingMessage = false;
-	#selected = null;
-	#resizer = null;
-	#isResizing = false;
-	#resizingStartX = 0;
-	#resizingStartWidth = 0;
-	#sidebarDefaultWidth = "15%";
-	#sidebarMinWidth = 120; //todo: css 
-	#collapseEdgeThreshold = 30;
 
 	constructor() {
 		super();
 		this.innerHTML = `
-			<aside>
-				<div id="sidebar-header">
-					<span id="sidebar-label">Chats</span>
-				</div>
-				<ul id="chats"></ul>
-				<button id="newchat">＋</button>
-			</aside>
-			<div id="sidebar-control">
-				<div class="resizer"></div>
+			<h1>SQLM</h1>
+			<div id="prompt">
+				<div class="title">Message:</div>
+				<textarea id="messageinput" placeholder="Type a message..."></textarea>
+				<button id="sendmessage" type="button">Send</button>
 			</div>
-			<div id="content">
-				<div class="content-header">
-					<input id="chattitle" type="text">
-				</div>
-				<div id="messages"></div>
-				<div id="composer" hidden>
-					<textarea id="messageinput" placeholder="Type a message..."></textarea>
-					<div class="composer-actions">
-						<button id="sendmessage" type="button">Send</button>
-						<div id="messageerror" hidden></div>
-					</div>
-				</div>
+			<div id="messageerror" hidden></div>
+			<div id="response">
+				<div class="title">Response:</div>
+				<div id="llmresp"><em>Send a message to get SQL.</em></div>
 			</div>`;
-		this.#aside = this.querySelector('aside');
-		this.#ulchats = this.querySelector('#chats');
-		this.#chattitle = this.querySelector('#chattitle');
-		this.#messages = this.querySelector('#messages');
-		this.#composer = this.querySelector('#composer');
+		this.#llmresp = this.querySelector('#llmresp');
 		this.#messageinput = this.querySelector('#messageinput');
 		this.#sendmessage = this.querySelector('#sendmessage');
 		this.#messageerror = this.querySelector('#messageerror');
-		this.#resizer = this.querySelector(".resizer");
 	}
 
-	async init(chats) {
-		this.#chats = chats;
-		//todo: select last opened chat
-		this.#selected = this.#chats.length > 0 ? this.#chats[0].id : null;
+	async init() {
 		await this.render();
 	}
 
 	async render() {
-		this.updateChats();
-		this.updateTitle();
-		await this.updateMessages();
+		//await this.updateMessages();
 		this.bindEvents();
-	}
-
-	async updateMessages() {
-		if (!this.#selected) {
-			this.#composer.hidden = true;
-			this.#messages.innerHTML = `<div class="empty-state">Select or create a chat.</div>`;
-			return;
-		}
-		this.#composer.hidden = false;
-		const res = await fetch(`/chat?id=${encodeURIComponent(this.#selected)}`);
-		if (!res.ok) {
-			this.#messages.innerHTML = `<div class="empty-state">Failed to load messages.</div>`;
-			return;
-		}
-		const payload = await res.json();
-		const msgs = Array.isArray(payload) ? payload : (payload.msgs ?? []);
-		if (msgs.length === 0) {
-			this.#messages.innerHTML = `<div class="empty-state">No messages in this chat yet.</div>`;
-			return;
-		}
-		this.#messages.innerHTML = msgs.map(this.renderMessageBody).join("");
-		this.#messages.scrollTop = this.#messages.scrollHeight;
-	}
-
-	renderMessageBody(msg) {
-		const roleClass = msg.type === 1 ? "msg-assistant" : "msg-user";
-		if (msg.type !== 1) {
-			return `
-				<article class="msg ${roleClass}">
-					<p>${escapeHTML(msg.text ?? "")}</p>
-				</article>
-			`;
-		}
-		const outline = (msg.outline ?? "").trim();
-		const sql = (msg.sql ?? "").trim();
-		if (!outline && !sql) {
-			return `
-				<article class="msg ${roleClass}">
-					<p>${escapeHTML(msg.text ?? "")}</p>
-				</article>
-			`;
-		}
-		return `
-			<article class="msg ${roleClass}">
-				<div class="structured">
-					${outline ? `
-						<section class="outline">
-							<p>${escapeHTML(outline)}</p>
-						</section>
-					` : ""}
-					${sql ? `
-						<section class="sql">
-							<pre><code>${escapeHTML(sql)}</code></pre>
-							<div class="sql-actions">
-								<button class="execute-sql" data-chat-id=${escapeHTML(msg.chat_id)} data-message-id=${escapeHTML(msg.id)}>
-									Execute
-								</button>
-							</div>
-							<div class="sql-exec-result"></div>
-						</section>
-					` : ""}
-				</div>
-			</article>
-		`;
-	}
-
-	async updateChats() {
-		if (!this.#chats) return;
-		this.#ulchats.innerHTML = "";
-		this.#chats.forEach(chat => {
-			const li = document.createElement("li");
-			li.dataset.id = chat.id;
-			const isSelected = (chat.id === this.#selected ? "selected" : "");
-			li.innerHTML = `
-				<div class="chat-row ${isSelected}">
-					<div class="left">	
-						<span class="title">${escapeHTML(chat.title)}</span>
-					</div>
-					<div class="right">
-						<button class="delete">✕</button>
-					</div>
-				</div>
-			`;
-			this.#ulchats.appendChild(li);
-		});
-	}
-
-	collapseSidebar() {
-		this.#aside.classList.add("hidden");
-		this.#aside.style.width = "0px";
-		this.#resizer.classList.add("sidebar-collapsed");
-	}
-
-	expandSidebar() {
-		this.#aside.classList.remove("hidden");
-		this.#aside.style.width = this.#sidebarDefaultWidth;
-		this.#resizer.classList.remove("sidebar-collapsed");
 	}
 
 	bindEvents() {
 		this.unbindEvents();
 		
-		this.#resizer.onmousedown = (e) => {
-			if (this.#aside.classList.contains("hidden")) {
-				this.expandSidebar();
-				return;
-			}
-			this.#isResizing = true;
-			this.#resizingStartX = e.clientX;
-			this.#resizingStartWidth = parseInt(window.getComputedStyle(this.#aside).width, 10);
-			document.body.style.userSelect = "none";
-		};
-		this.onmousemove = (e) => {
-			if (!this.#isResizing) return;
-			const delta = e.clientX - this.#resizingStartX;
-			const newWidth = this.#resizingStartWidth + delta;
-			const nearLeftEdge = e.clientX <= this.#collapseEdgeThreshold;
-			if (newWidth <= this.#sidebarMinWidth && nearLeftEdge) {
-				this.collapseSidebar();
-				this.#isResizing = false;
-				document.body.style.userSelect = "";
-				return;
-			}
-			if (newWidth > this.#sidebarMinWidth) {
-				this.#aside.style.width = newWidth + "px";
-			} else {
-				this.#aside.style.width = this.#sidebarMinWidth + "px";
-			}
-		};
-		this.onmouseup = () => {
-			if (this.#isResizing) {
-				this.#isResizing = false;
-				this.#resizingStartX = 0;
-				this.#resizingStartWidth = 0;
-				document.body.style.userSelect = "";
-			}
-		};
-
-		this.querySelector("#newchat").onclick = () => {
-			this.createChat("New Chat", null);
-		};
-
-		this.querySelectorAll("#chats li").forEach(li => {
-			//todo: avoid string-int conversion
-			const id = parseInt(li.dataset.id, 10);
-			li.onclick = async () => {
-				//this.saveChat();
-				this.#selected = id;
-				await this.render();
-			};
-			li.querySelector(".delete").onclick = async (e) => {
-				e.stopPropagation();
-				await this.deleteChat(id);
-			};
-		});
-	
-		let renameTimer = null;
-		this.#chattitle.oninput = () => {
-			clearTimeout(renameTimer);
-			renameTimer = setTimeout(() => {this.saveTitleChange();}, 400);
-		};
-
 		this.#sendmessage.onclick = async () => {
 			await this.sendMessage();
 		};
@@ -330,15 +137,15 @@ class XSqlm extends HTMLElement {
 			}
 		};
 
-		this.querySelectorAll(".execute-sql").forEach(btn => {
-			btn.onclick = async () => {
-				const chatId = Number(btn.dataset.chatId);
-				const messageId = Number(btn.dataset.messageId);
-				const resultEl = btn.closest(".sql")?.querySelector(".sql-exec-result");
-				if (!chatId || !messageId || !resultEl) return;
-				await this.executeSQLForMessage(chatId, messageId, btn, resultEl);
-			};
-		});
+		// this.querySelectorAll(".execute-sql").forEach(btn => {
+		// 	btn.onclick = async () => {
+		// 		const chatId = Number(btn.dataset.chatId);
+		// 		const messageId = Number(btn.dataset.messageId);
+		// 		const resultEl = btn.closest(".sql")?.querySelector(".sql-exec-result");
+		// 		if (!chatId || !messageId || !resultEl) return;
+		// 		await this.executeSQLForMessage(chatId, messageId, btn, resultEl);
+		// 	};
+		// });
 	}
 
 	unbindEvents() {
@@ -348,74 +155,8 @@ class XSqlm extends HTMLElement {
 		if (this.#messageinput) this.#messageinput.onkeydown = null;
 	}
 
-	updateTitle() {
-		this.#chattitle.value = this.getChatTitleById(this.#selected) ?? "";
-	}
-
-	getChatTitleById(id, chats=null) {
-		if (!id) return null;
-		if (chats === null) chats = this.#chats;
-		for (const chat of chats) {
-			if (chat.id === id) return chat.title;
-		}
-		return null;
-	}
-
-	async createChat(title, parentId) {
-		const res = await fetch('/create', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ title: title })
-		});
-		if (!res.ok) {
-			console.error("Failed to create a chat");
-			return;
-		}
-		const data = await res.json();
-		this.#chats = data.chats;
-		this.#selected = data.new_chat_id;
-		await this.render();
-	}
-
-	async deleteChat(id) {
-		if (!confirm(`Delete chat "${this.getChatTitleById(id)}"?`)) return;
-		const res = await fetch('/delete', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ id }),
-		});
-		if (!res.ok) {
-			console.error("Failed to delete the chat");
-			return;
-		}
-		const chats = await res.json();
-		this.#chats = chats;
-		this.#selected = chats.length > 0 ? chats[0].id : null;
-		await this.render();
-	}
-
-	async saveTitleChange() {
-		const newTitle = this.#chattitle.value.trim();
-		const oldTitle = this.getChatTitleById(this.#selected);
-		if (!newTitle || newTitle === oldTitle) return;
-
-		const res = await fetch('/rename', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ id: this.#selected, title: newTitle })
-		});
-		if (!res.ok) {
-			console.error("Rename failed");
-			this.#chattitle.value = oldTitle;
-			return;
-		}
-		const chats = await res.json();
-		this.#chats = chats;
-		await this.render();
-	}
-
 	async sendMessage() {
-		if (!this.#selected || this.#isSendingMessage) return;
+		if (this.#isSendingMessage) return;
 		const text = this.#messageinput.value.trim();
 		if (!text) return;
 		this.#isSendingMessage = true;
@@ -424,93 +165,96 @@ class XSqlm extends HTMLElement {
 		this.#messageerror.hidden = true;
 		this.#messageerror.textContent = "";
 
-		if (this.#messages.querySelector(".empty-state")) this.#messages.innerHTML = "";
-		this.#messages.insertAdjacentHTML(
-			"beforeend",
-			`<article class="msg msg-user msg-waiting"><p>${escapeHTML(text)}</p></article>`
-		);
-		this.#messages.insertAdjacentHTML(
-			"beforeend",
-			`<article class="msg msg-assistant msg-waiting"><p><em>Waiting for response ...</em></p></article>`
-		);
-		this.#messages.scrollTop = this.#messages.scrollHeight;
-		this.#messageinput.value = "";
-
-		const res = await fetch('/message', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ chat_id: this.#selected, text }),
-		});
-		if (!res.ok) {
-			this.#messageerror.textContent = "Failed to send message.";
-			this.#messageerror.hidden = false;
-		}
-		this.#isSendingMessage = false;
-		this.#messageinput.disabled = false;
-		this.#sendmessage.disabled = false;
-		await this.render();
-	}
-
-	async executeSQLForMessage(chatId, messageId, button, resultEl) {
-		button.disabled = true;
-		const oldLabel = button.textContent;
-		button.textContent = "Executing...";
-		resultEl.classList.remove("error");
-		resultEl.innerHTML = "";
+		this.#llmresp.innerHTML = `<em>Waiting for response ...</em>`;
 
 		try {
-			const res = await fetch("/execute", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
+			const res = await fetch('/message', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ text }),
 			});
 			if (!res.ok) {
-				const txt = await res.text();
-				this.renderExecError(resultEl, txt || "Execution failed.");
+				this.#messageerror.textContent = "Failed to send message.";
+				this.#messageerror.hidden = false;
+				this.#llmresp.innerHTML = `<em>No response.</em>`;
 				return;
 			}
 			const payload = await res.json();
-			const rows = Array.isArray(payload.rows) ? payload.rows : [];
-			this.renderExecRows(resultEl, rows);
+			this.#llmresp.innerHTML = `
+				<div class="outline">${escapeHTML(payload.outline ?? "")}</div>
+				<pre class="sql-code">${escapeHTML(payload.sql ?? "")}</pre>
+			`;
 		} catch {
-			this.renderExecError(resultEl, "Execution failed.");
+			this.#messageerror.textContent = "Failed to send message.";
+			this.#messageerror.hidden = false;
+			this.#llmresp.innerHTML = `<em>No response.</em>`;
 		} finally {
-			this.#messages.scrollTop = this.#messages.scrollHeight;
-			button.disabled = false;
-			button.textContent = oldLabel;
+			this.#isSendingMessage = false;
+			this.#messageinput.disabled = false;
+			this.#sendmessage.disabled = false;
 		}
 	}
 
-	renderExecError(resultEl, message) {
-		resultEl.classList.add("error");
-		resultEl.innerHTML = `<div>${escapeHTML(message)}</div>`;
-	}
+	// async executeSQLForMessage(chatId, messageId, button, resultEl) {
+	// 	button.disabled = true;
+	// 	const oldLabel = button.textContent;
+	// 	button.textContent = "Executing...";
+	// 	resultEl.classList.remove("error");
+	// 	resultEl.innerHTML = "";
 
-	renderExecRows(resultEl, rows) {
-		resultEl.classList.remove("error");
-		if (rows.length === 0) {
-			resultEl.innerHTML = `<div class="sql-empty">No rows returned.</div>`;
-			return;
-		}
-		const cols = Object.keys(rows[0] ?? {});
-		const head = cols.map((c) => `<th>${escapeHTML(c)}</th>`).join("");
-		const body = rows.map((r) => {
-			const tds = cols.map((c) => {
-				const v = r[c];
-				const s = v == null ? "NULL" : (typeof v === "object" ? JSON.stringify(v) : String(v));
-				return `<td>${escapeHTML(s)}</td>`;
-			}).join("");
-			return `<tr>${tds}</tr>`;
-		}).join("");
-		resultEl.innerHTML = `
-			<div class="sql-result-table-wrap">
-				<table class="sql-result-table">
-					<thead><tr>${head}</tr></thead>
-					<tbody>${body}</tbody>
-				</table>
-			</div>
-		`;
-	}
+	// 	try {
+	// 		const res = await fetch("/execute", {
+	// 			method: "POST",
+	// 			headers: { "Content-Type": "application/json" },
+	// 			body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
+	// 		});
+	// 		if (!res.ok) {
+	// 			const txt = await res.text();
+	// 			this.renderExecError(resultEl, txt || "Execution failed.");
+	// 			return;
+	// 		}
+	// 		const payload = await res.json();
+	// 		const rows = Array.isArray(payload.rows) ? payload.rows : [];
+	// 		this.renderExecRows(resultEl, rows);
+	// 	} catch {
+	// 		this.renderExecError(resultEl, "Execution failed.");
+	// 	} finally {
+	// 		this.#messages.scrollTop = this.#messages.scrollHeight;
+	// 		button.disabled = false;
+	// 		button.textContent = oldLabel;
+	// 	}
+	// }
+
+	// renderExecError(resultEl, message) {
+	// 	resultEl.classList.add("error");
+	// 	resultEl.innerHTML = `<div>${escapeHTML(message)}</div>`;
+	// }
+
+	// renderExecRows(resultEl, rows) {
+	// 	resultEl.classList.remove("error");
+	// 	if (rows.length === 0) {
+	// 		resultEl.innerHTML = `<div class="sql-empty">No rows returned.</div>`;
+	// 		return;
+	// 	}
+	// 	const cols = Object.keys(rows[0] ?? {});
+	// 	const head = cols.map((c) => `<th>${escapeHTML(c)}</th>`).join("");
+	// 	const body = rows.map((r) => {
+	// 		const tds = cols.map((c) => {
+	// 			const v = r[c];
+	// 			const s = v == null ? "NULL" : (typeof v === "object" ? JSON.stringify(v) : String(v));
+	// 			return `<td>${escapeHTML(s)}</td>`;
+	// 		}).join("");
+	// 		return `<tr>${tds}</tr>`;
+	// 	}).join("");
+	// 	resultEl.innerHTML = `
+	// 		<div class="sql-result-table-wrap">
+	// 			<table class="sql-result-table">
+	// 				<thead><tr>${head}</tr></thead>
+	// 				<tbody>${body}</tbody>
+	// 			</table>
+	// 		</div>
+	// 	`;
+	// }
 }
 
 function escapeHTML(str) {
