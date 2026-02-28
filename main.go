@@ -586,7 +586,7 @@ func handleSlackSlash(w http.ResponseWriter, r *http.Request) {
 			SQL:       sql,
 			Context:   msgs,
 		})
-		postToResponseURL(cmd.ResponseURL, "```sql\n"+sql+"\n```")
+		postToResponseURL(cmd.ResponseURL, "```\n"+sql+"\n```")
 	}(cmd, text)
 	infoLog.Printf("Slack slash: query=%s", text)
 }
@@ -613,6 +613,7 @@ func verifySlackSignature(r *http.Request) bool {
 func postToResponseURL(responseURL, message string) {
 	payload := map[string]interface{}{
 		"replace_original": true,
+		"response_type":    "in_channel",
 		"text":             message,
 	}
 	data, _ := json.Marshal(payload)
