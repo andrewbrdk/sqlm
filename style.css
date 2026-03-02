@@ -157,8 +157,8 @@ x-sqlm {
 	}
 	.errmsg {
 		color: #b00020;
-		font-size: 0.9rem;
-		margin-top: 0.5rem;
+		margin-top: 0;
+		font-style: italic;
 	}
 }
 

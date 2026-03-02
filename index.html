@@ -91,13 +91,16 @@ class XLogin extends HTMLElement {
 class XSqlm extends HTMLElement {
 	#messageinput = null;
 	#sendmessage = null;
-	#messageerror = null;
 	#isSendingMessage = false;
+	#sendstatus = null;
+	#sendstatusmsg = null;
 	#response = null;
 	#query = null;
 	#sqlcode = null;
+	#execstatus = null;
+	#execstatusmsg = null;
+	#exec = null;
 	#execresult = null;
-	#execerror = null;
 
 	constructor() {
 		super();
@@ -110,7 +113,11 @@ class XSqlm extends HTMLElement {
 					<button id="sendmessage" type="button">Send</button>
 				</div>
 			</section>
-			<div id="messageerror" class="errmsg" hidden></div>
+			<section id="sendstatus" hidden>
+				<div class="label"></div>
+				<div id="sendstatusmsg" class="mainarea"></div>
+				<div class="btns"></div>
+			</section>
 			<section id="response" hidden>
 				<div class="label">Query:</div>
 				<div id="query" class="mainarea">
@@ -122,22 +129,29 @@ class XSqlm extends HTMLElement {
 					<button id="ratedown" type="button">Rate Incorrect</button>
 				</div>
 			</section>
-			<div id="execerror" class="errmsg" hidden></div>
-			<section id="execresult" hidden>
+			<section id="execstatus" hidden>
+				<div class="label"></div>
+				<div id="execstatusmsg" class="mainarea"></div>
+				<div class="btns"></div>
+			</section>
+			<section id="exec" hidden>
 				<div class="label">Results:</div>
-				<div id="sql-exec-result" class="mainarea"></div>
+				<div id="execresult" class="mainarea"></div>
 				<div class="btns">
-					<button id="clearresult" type="button">Close</button>
+					<button id="closeresults" type="button">Close</button>
 				</div>
 			</section>`;
 		this.#messageinput = this.querySelector('#messageinput');
 		this.#sendmessage = this.querySelector('#sendmessage');
-		this.#messageerror = this.querySelector('#messageerror');
+		this.#sendstatus = this.querySelector('#sendstatus');
+		this.#sendstatusmsg = this.querySelector('#sendstatusmsg');
 		this.#response = this.querySelector('#response');
 		this.#query = this.querySelector('#query');
 		this.#sqlcode = this.querySelector('#sqlcode');
+		this.#execstatus = this.querySelector('#execstatus');
+		this.#execstatusmsg = this.querySelector('#execstatusmsg');
+		this.#exec = this.querySelector('#exec');
 		this.#execresult = this.querySelector('#execresult');
-		this.#execerror = this.querySelector('#execerror');
 	}
 
 	async init() {
@@ -164,6 +178,10 @@ class XSqlm extends HTMLElement {
 		this.querySelector("#executesql").onclick = async () => {
 			await this.executeSQLForMessage();
 		};
+		this.querySelector("#closeresults").onclick = () => {
+			this.#exec.hidden = true;
+			this.#execresult.innerHTML = "";
+		};
 	}
 
 	unbindEvents() {
@@ -175,16 +193,20 @@ class XSqlm extends HTMLElement {
 
 	async sendMessage() {
 		if (this.#isSendingMessage) return;
+		this.#sendstatusmsg.innerHTML = "";
+		this.#sendstatus.hidden = false;
+		this.#response.hidden = true;
+		this.#execstatus.hidden = true;
+		this.#exec.hidden = true;
 		const text = this.#messageinput.value.trim();
-		if (!text) return;
+		if (!text) {
+			this.#sendstatusmsg.innerHTML = `<div class="errmsg">Message can't be empty.</div>`;
+			return;
+		}
 		this.#isSendingMessage = true;
 		this.#messageinput.disabled = true;
 		this.#sendmessage.disabled = true;
-		this.#messageerror.hidden = true;
-		this.#messageerror.textContent = "";
-
-		this.#response.hidden = false;
-		this.#sqlcode.innerHTML = `<em>Waiting for response ...</em>`;
+		this.#sendstatusmsg.innerHTML = `<em>Waiting for response ...</em>`;		
 
 		try {
 			const res = await fetch('/message', {
@@ -193,17 +215,15 @@ class XSqlm extends HTMLElement {
 				body: JSON.stringify({ text }),
 			});
 			if (!res.ok) {
-				this.#messageerror.textContent = "Failed to send message.";
-				this.#messageerror.hidden = false;
-				this.#sqlcode.innerHTML = `<em>No response.</em>`;
+				this.#sendstatusmsg.innerHTML = `<div class="errmsg">Failed to send message.</div>`;
 				return;
 			}
 			const payload = await res.json();
+			this.#sendstatus.hidden = true;
+			this.#response.hidden = false;
 			this.#sqlcode.innerHTML = `${escapeHTML(payload.sql ?? "")}`;
-		} catch {
-			this.#messageerror.textContent = "Failed to send message.";
-			this.#messageerror.hidden = false;
-			this.#sqlcode.innerHTML = `<em>No response.</em>`;
+		} catch (e) {
+			this.#sendstatusmsg.innerHTML = `<div class="errmsg">Failed to send message.</div>`;
 		} finally {
 			this.#isSendingMessage = false;
 			this.#messageinput.disabled = false;
@@ -216,12 +236,12 @@ class XSqlm extends HTMLElement {
 		button.disabled = true;
 		const oldLabel = button.textContent;
 		button.textContent = "Executing...";
-		this.#execerror.hidden = true;
-		this.#execerror.textContent = "";
+		this.#execstatusmsg.innerHTML = "";
+		this.#execstatus.hidden = false;
+		this.#exec.hidden = true;
 		const sql = this.#sqlcode.textContent || "";
 		if (!sql) {
-			this.#execerror.hidden = false;
-			this.#execerror.textContent = "No SQL to execute.";
+			this.#execstatusmsg.innerHTML = `<div class="errmsg">No SQL to execute.</div>`;
 			button.disabled = false;
 			button.textContent = oldLabel;
 			return;
@@ -235,16 +255,16 @@ class XSqlm extends HTMLElement {
 			});
 			if (!res.ok) {
 				const txt = await res.text();
-				this.#execerror.hidden = false;
-				this.#execerror.textContent = `${escapeHTML(txt || "Execution failed.")}`;
+				this.#execstatusmsg.innerHTML = `<div class="errmsg">${escapeHTML(txt || "Execution failed.")}</div>`;
 				return;
 			}
 			const payload = await res.json();
 			const rows = Array.isArray(payload.rows) ? payload.rows : [];
 			this.renderExecRows(rows);
+			this.#exec.hidden = false;
+			this.#execstatus.hidden = true;
 		} catch (e) {
-			this.#execerror.hidden = false;
-			this.#execerror.textContent = "Execution failed.";
+			this.#execstatusmsg.innerHTML = `<div class="errmsg">Execution failed.</div>`;
 		} finally {
 			button.disabled = false;
 			button.textContent = oldLabel;
@@ -252,9 +272,8 @@ class XSqlm extends HTMLElement {
 	}
 
 	renderExecRows(rows) {
-		const resultEl = this.querySelector("#sql-exec-result");
 		if (rows.length === 0) {
-			resultEl.innerHTML = `<div class="sql-empty">No rows returned.</div>`;
+			this.#execresult.innerHTML = `<div class="sql-empty">No rows returned.</div>`;
 			return;
 		}
 		const cols = Object.keys(rows[0] ?? {});
@@ -267,7 +286,7 @@ class XSqlm extends HTMLElement {
 			}).join("");
 			return `<tr>${tds}</tr>`;
 		}).join("");
-		resultEl.innerHTML = `
+		this.#execresult.innerHTML = `
 			<div class="sql-result-table-wrap">
 				<table class="sql-result-table">
 					<thead><tr>${head}</tr></thead>
