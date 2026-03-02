@@ -14,13 +14,8 @@ h1 a {
 	text-decoration: none;
 }
 
-.hidden {
-	display: none;
-}
-
-x-login[hidden], x-sqlm[hidden] {
-	/*todo: apply general .hidden style */
-	display: none;
+[hidden] {
+	display: none !important;
 }
 
 x-main {
@@ -79,118 +74,85 @@ x-sqlm {
 	flex-direction: column;
 	height: 100%;
 	overflow-y: auto;
-	padding: 0 2rem;
+	padding: 0 10%;
 
-	#prompt {
+	section {
 		flex: 0 0 auto;
 		display: flex;
-		flex-direction: column;
-		padding: 0 2rem;
-		overflow-y: hidden;
-		min-height: 150px;
+		flex-direction: row;
+		padding: 3px 2rem;
+		overflow: hidden;
+		height: 10rem;
+		margin-bottom: 1rem;
+		gap: 0.7rem;
 
-		.title {
+		.label {
 			font-weight: bold;
-			margin-bottom: 0.5rem;
+			text-align: right;
+			flex: 0 0 7%;
 		}
+		.mainarea{
+			flex: 1;
+			margin-top: 0;
+			margin-bottom: 0;
+			padding: 0;
+			border: none; /*1px solid #bbb;*/
+  			overflow-y: auto;
+			overflow-x: auto;
+		}
+		.btns {
+			flex: 0 0 12%;
+			display: flex;
+			flex-direction: column;
+			gap: 0.5rem;
+
+			button {
+				height: 2.5rem;
+				padding: 0 0.9rem;
+				border: 1px solid black;
+				background: white;
+				border-radius: 8px;
+				cursor: pointer;
+				width: auto;
+				align-self: flex-start;
+			}
+			button:hover {
+				box-shadow: 0 0 0px 1px black;
+			}
+			button:active {
+				background-color: #eee;
+			}
+			button:disabled {
+				opacity: 0.6;
+				cursor: not-allowed;
+			}
+		}
+	}
+	#prompt {
 		#messageinput {
-			flex: 1 1 auto;
-			min-height: 2.5rem;
-			max-height: 12rem;
-			resize: vertical;
+			height: 4rem; /*todo: dynamic */
 			font-family: inherit;
-			font-size: 1rem;
-			padding: 0.5rem 0.75rem;
-			border: 1px solid #bbb;
-			border-radius: 8px;
 			outline: none;
+			resize: none;
 		}
-		#messageinput:focus {
-			border-color: #666;
-		}
-		#sendmessage {
-			height: 2.5rem;
-			padding: 0 0.9rem;
-			border: 1px solid black;
-			background: white;
-			border-radius: 8px;
-			cursor: pointer;
-			width: auto;
-			align-self: flex-start;
-		}
-		#sendmessage:disabled {
-			opacity: 0.6;
-			cursor: not-allowed;
+		#messageinput::placeholder {
+			font-style: italic;
 		}
 	}
 	#response {
 		flex: 1;
-		overflow-y: auto;
-		padding: 0 2rem;
-		margin-top: 1rem;
-		margin-bottom: 1rem;
-		display: flex;
-		flex-direction: column;
-		min-height: 200px;
+		min-height: 10rem;
 	
-		.title {
-			font-weight: bold;
-			margin-bottom: 0.5rem;
-		}
-		#llmresp {
-			flex: 1;
-			overflow-y: auto;
-			border: 1px solid #bbb;
-			border-radius: 8px;
-			padding: 0.5rem 0.75rem;
-		}
-		.outline {
-			margin-bottom: 1rem;
-			white-space: pre-wrap;
+		#sqlcode {
+			height: 95%;
+			margin-top: 0.2rem;
+			margin-bottom: 0;
 			font-family: monospace;
-		}
-		.sql-code {
+			/*
 			background: #f5f5f5;
-			padding: 0.75rem;
-			border-radius: 6px;
-			overflow-x: auto;
-			font-family: monospace;
-		}
-		#executesql {
-			height: 2.5rem;
-			padding: 0 0.9rem;
-			border: 1px solid black;
-			background: white;
 			border-radius: 8px;
-			cursor: pointer;
-			width: auto;
-			align-self: flex-start;
-		}
-		#executesql:disabled {
-			opacity: 0.6;
-			cursor: not-allowed;
-		}
-	}
-	#execresult {
-		flex: 1;
-		overflow-y: auto;
-		padding: 0 2rem;
-		margin-top: 1rem;
-		margin-bottom: 1rem;
-		display: flex;
-		flex-direction: column;
-		min-height: 200px;
-	
-		.title {
-			font-weight: bold;
-			margin-bottom: 0.5rem;
-		}
-		#sql-exec-result {
-			flex: 1;
-			overflow-y: auto;
-			border: 1px solid #bbb;
-			border-radius: 8px;
-			padding: 0.5rem 0.75rem;
+			padding: 0.5rem;
+			*/
 		}
 	}
 	.errmsg {
@@ -199,5 +161,4 @@ x-sqlm {
 		margin-top: 0.5rem;
 	}
 }
-
 

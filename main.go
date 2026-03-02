@@ -261,10 +261,10 @@ func callOpenRouter(messages []LLMMessage) (string, error) {
 func (S *Sqlm) ExecuteSQL(query string) ([]map[string]any, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
-		return nil, errors.New("empty query")
+		return nil, errors.New("Empty query.")
 	}
 	if S.execConn == nil {
-		return nil, errors.New("execution db not initialized")
+		return nil, errors.New("Execution DB is not set.")
 	}
 	//todo: set timeout from config
 	//todo: pass user context for cancellation
