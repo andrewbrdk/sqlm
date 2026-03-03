@@ -1,2 +1,2 @@
-# SQL LLM
-SQL LLM App
+# Query Agent
+

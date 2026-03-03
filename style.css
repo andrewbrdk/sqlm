@@ -69,7 +69,7 @@ x-login {
 	}
 }
 
-x-sqlm {
+x-queryagent {
 	display: flex;
 	flex-direction: column;
 	height: 100%;

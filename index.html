@@ -13,18 +13,18 @@
 <script>
 class XMain extends HTMLElement {
 	#login = null;
-	#sqlm = null;
+	#queryagent = null;
 
 	constructor() {
 		super();
 		this.innerHTML = `
 			<x-login></x-login>
-			<x-sqlm></x-sqlm>
+			<x-queryagent></x-queryagent>
 		`;
-		this.#sqlm = this.querySelector('x-sqlm');
+		this.#queryagent = this.querySelector('x-queryagent');
 		this.#login = this.querySelector('x-login');
 		this.#login.hidden = true;
-		this.#sqlm.hidden = true;
+		this.#queryagent.hidden = true;
 		this.addEventListener('loginsuccess', (e) => {
 			this.renderPage();
 		});
@@ -35,14 +35,14 @@ class XMain extends HTMLElement {
 		let res = await fetch('/checkauth');
 		const statusCode = res.status;
 		if (statusCode == 200) {
-			this.#sqlm.hidden = false;
+			this.#queryagent.hidden = false;
 			this.#login.hidden = true;
-			this.#sqlm.init();
+			this.#queryagent.init();
 		} else if (statusCode == 401) { // unauthorized
 			this.#login.hidden = false;
-			this.#sqlm.hidden = true;
+			this.#queryagent.hidden = true;
 		} else {
-			this.#sqlm.hidden = true;
+			this.#queryagent.hidden = true;
 		}
 	}
 }
@@ -51,7 +51,7 @@ class XLogin extends HTMLElement {
 	constructor() {
 		super();
 		this.innerHTML = `
-			<h1>SQLM</h1>
+			<h1>QUERYAGENT</h1>
 			<form>
 				<label for="password">Password:</label>
 				<input type="password" id="password" name="password" required>
@@ -88,7 +88,7 @@ class XLogin extends HTMLElement {
 	}
 }
 
-class XSqlm extends HTMLElement {
+class XQueryagent extends HTMLElement {
 	#messageinput = null;
 	#sendmessage = null;
 	#isSendingMessage = false;
@@ -125,8 +125,6 @@ class XSqlm extends HTMLElement {
 				</div>
 				<div class="btns">
 					<button id="executesql" type="button">Execute</button>
-					<button id="rateup" type="button">Rate Correct</button>
-					<button id="ratedown" type="button">Rate Incorrect</button>
 				</div>
 			</section>
 			<section id="execstatus" hidden>
@@ -311,7 +309,7 @@ function escapeHTML(str) {
 
 customElements.define('x-main', XMain);
 customElements.define('x-login', XLogin);
-customElements.define('x-sqlm', XSqlm);
+customElements.define('x-queryagent', XQueryagent);
 
 </script>
 </body>

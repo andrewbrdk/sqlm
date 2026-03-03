@@ -1,4 +1,4 @@
-module gosqlm
+module queryagent
 
 go 1.19
 

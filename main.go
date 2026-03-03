@@ -32,9 +32,9 @@ var infoLog *log.Logger
 var errorLog *log.Logger
 
 var CONF Config
-var SQLM Sqlm
+var QUERYAGENT Queryagent
 
-type Sqlm struct {
+type Queryagent struct {
 	execConn *pgx.Conn
 }
 
@@ -103,38 +103,38 @@ func main() {
 	errorLog = log.New(os.Stdout, "ERROR: ", log.Ldate|log.Ltime|log.Lshortfile)
 	initConfig()
 	jwtSecretKey = generateRandomKey(32)
-	SQLM.initExecConn()
-	defer SQLM.execConn.Close(context.Background())
+	QUERYAGENT.initExecConn()
+	defer QUERYAGENT.execConn.Close(context.Background())
 	httpServer()
 }
 
 func initConfig() {
 	CONF.port = ":8080"
 	CONF.password = ""
-	if port := os.Getenv("SQLM_PORT"); port != "" {
+	if port := os.Getenv("QUERYAGENT_PORT"); port != "" {
 		CONF.port = ":" + port
 	}
-	CONF.password = os.Getenv("SQLM_PASSWORD")
+	CONF.password = os.Getenv("QUERYAGENT_PASSWORD")
 	CONF.openRouterKey = strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY"))
 	CONF.openRouterModel = strings.TrimSpace(os.Getenv("OPENROUTER_MODEL"))
 	if CONF.openRouterKey == "" || CONF.openRouterModel == "" {
 		log.Fatal("OPENROUTER_API_KEY and OPENROUTER_MODEL are required")
 	}
-	CONF.execDB = os.Getenv("SQLM_EXEC_DB")
+	CONF.execDB = os.Getenv("QUERYAGENT_EXEC_DB")
 	if CONF.execDB == "" {
-		errorLog.Printf("SQLM_EXEC_DB is not set. SQL execution is not available.")
+		errorLog.Printf("QUERYAGENT_EXEC_DB is not set. SQL execution is not available.")
 	}
-	CONF.logFile = strings.TrimSpace(os.Getenv("SQLM_LOG_FILE"))
+	CONF.logFile = strings.TrimSpace(os.Getenv("QUERYAGENT_LOG_FILE"))
 	if CONF.logFile == "" {
-		errorLog.Printf("SQLM_LOG_FILE is not set. Logging is disabled.")
+		errorLog.Printf("QUERYAGENT_LOG_FILE is not set. Logging is disabled.")
 	}
-	CONF.contextDir = os.Getenv("SQLM_CONTEXT_DIR")
+	CONF.contextDir = os.Getenv("QUERYAGENT_CONTEXT_DIR")
 	if CONF.contextDir == "" {
 		errorLog.Printf("No context directory configured.")
 	}
-	CONF.slackSigningSecret = os.Getenv("SQLM_SLACK_SIGNING_SECRET")
+	CONF.slackSigningSecret = os.Getenv("QUERYAGENT_SLACK_SIGNING_SECRET")
 	if CONF.slackSigningSecret == "" {
-		errorLog.Printf("SQLM_SLACK_SIGNING_SECRET is not set.")
+		errorLog.Printf("QUERYAGENT_SLACK_SIGNING_SECRET is not set.")
 	}
 }
 
@@ -148,7 +148,7 @@ func generateRandomKey(size int) []byte {
 	return key
 }
 
-func (S *Sqlm) initExecConn() {
+func (S *Queryagent) initExecConn() {
 	if strings.TrimSpace(CONF.execDB) == "" {
 		infoLog.Printf("No execution database configured.")
 		return
@@ -258,7 +258,7 @@ func callOpenRouter(messages []LLMMessage) (string, error) {
 	return strings.TrimSpace(orResp.Choices[0].Message.Content), nil
 }
 
-func (S *Sqlm) ExecuteSQL(query string) ([]map[string]any, error) {
+func (S *Queryagent) ExecuteSQL(query string) ([]map[string]any, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil, errors.New("Empty query.")
@@ -518,7 +518,7 @@ func httpExecute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	//todo: create cancel context
-	rows, err := SQLM.ExecuteSQL(query)
+	rows, err := QUERYAGENT.ExecuteSQL(query)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -546,7 +546,7 @@ func handleSlackSlash(w http.ResponseWriter, r *http.Request) {
 	text := strings.TrimSpace(cmd.Text)
 	if text == "" {
 		json.NewEncoder(w).Encode(map[string]string{
-			"text": "Usage: `/sqlm select * from users`",
+			"text": "Usage: `/queryagent select * from users`",
 		})
 		return
 	}

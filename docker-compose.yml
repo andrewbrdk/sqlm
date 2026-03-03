@@ -1,7 +1,7 @@
 services:
-  sqlm:
-    image: sqlm
-    container_name: sqlm_web
+  queryagent:
+    image: queryagent
+    container_name: queryagent_web
     build:
       context: ./
       dockerfile: Dockerfile
@@ -9,7 +9,7 @@ services:
       # host:container
       - "8080:8080"
     volumes:
-      #- ./sqlm.toml:/app/sqlm.toml
+      #- ./queryagent.toml:/app/queryagent.toml
       - ./context_examples:/app/context:ro
       - ./logs:/app/logs
       - /etc/timezone:/etc/timezone:ro
@@ -20,39 +20,39 @@ services:
     environment:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL}
-      SQLM_EXEC_DB: postgres://pguser:password123@postgres:5432/sqlm?sslmode=disable
-      SQLM_CONTEXT_DIR: /app/context
-      SQLM_LOG_FILE: /app/logs/gosqlm.log
-      #SQLM_CONF: /app/sqlm.toml
-      #SQLM_PORT: 8080
-      #SQLM_PASSWORD: "qwerty"
+      QUERYAGENT_EXEC_DB: postgres://pguser:password123@postgres:5432/queryagent?sslmode=disable
+      QUERYAGENT_CONTEXT_DIR: /app/context
+      QUERYAGENT_LOG_FILE: /app/logs/queryagent.log
+      #QUERYAGENT_CONF: /app/queryagent.toml
+      #QUERYAGENT_PORT: 8080
+      #QUERYAGENT_PASSWORD: "qwerty"
 
   postgres:
     image: postgres:16
-    container_name: sqlm_postgres
+    container_name: queryagent_postgres
     restart: always
     environment:
       POSTGRES_USER: pguser
       POSTGRES_PASSWORD: password123
-      POSTGRES_DB: sqlm
+      POSTGRES_DB: queryagent
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pguser -d sqlm"]
+      test: ["CMD-SHELL", "pg_isready -U pguser -d queryagent"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   pgweb:
     image: sosedoff/pgweb:latest
-    container_name: sqlm_pgweb
+    container_name: queryagent_pgweb
     restart: always
     ports:
       - "8081:8081"
     environment:
-      PGWEB_DATABASE_URL: postgres://pguser:password123@postgres:5432/sqlm?sslmode=disable
+      PGWEB_DATABASE_URL: postgres://pguser:password123@postgres:5432/queryagent?sslmode=disable
     depends_on:
       - postgres
 
