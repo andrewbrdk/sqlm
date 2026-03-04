@@ -1,5 +1,7 @@
 FROM golang:1.26
 
+RUN apt-get update && apt-get install pgformatter
+
 RUN mkdir -p /app/context
 RUN mkdir -p /app/logs
 COPY main.go go.mod index.html style.css /app/

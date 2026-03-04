@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -258,6 +259,24 @@ func callOpenRouter(messages []LLMMessage) (string, error) {
 	return strings.TrimSpace(orResp.Choices[0].Message.Content), nil
 }
 
+func formatSQL(sql string) string {
+	//todo: use something other than pg_format
+	_, err := exec.LookPath("pg_format")
+	if err != nil {
+		errorLog.Printf("pg_format not found in PATH: %v", err)
+		return strings.TrimSpace(sql)
+	}
+	cmd := exec.Command("pg_format", "-")
+	cmd.Stdin = strings.NewReader(sql)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		errorLog.Printf("pg_format failed: %v: %s", err, string(output))
+		return strings.TrimSpace(sql)
+	}
+	formatted := strings.TrimSpace(string(output))
+	return formatted
+}
+
 func (S *Queryagent) ExecuteSQL(query string) ([]map[string]any, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {
@@ -474,8 +493,8 @@ func httpUserMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	outline := strings.TrimSpace(parsed.Outline)
-	sql := strings.TrimSpace(parsed.SQL)
-	//todo: format and validate SQL
+	sql := formatSQL(parsed.SQL)
+	//todo: validate SQL
 	go logLLM(LLMLogEntry{
 		ID:        generateUniqueID(),
 		Timestamp: time.Now(),
