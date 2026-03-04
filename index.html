@@ -122,6 +122,7 @@ class XQueryagent extends HTMLElement {
 				<div class="label">Query:</div>
 				<textarea id="sqlcode" class="mainarea"></textarea>
 				<div class="btns">
+					<button id="copysql" type="button">Copy</button>
 					<button id="executesql" type="button">Execute</button>
 				</div>
 			</section>
@@ -170,6 +171,9 @@ class XQueryagent extends HTMLElement {
 				e.preventDefault();
 				await this.sendMessage();
 			}
+		};
+		this.querySelector("#copysql").onclick = () => {
+			navigator.clipboard.writeText(this.#sqlcode.value || "");
 		};
 		this.querySelector("#executesql").onclick = async () => {
 			await this.executeSQLForMessage();
