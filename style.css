@@ -101,10 +101,11 @@ x-queryagent {
 			overflow-x: auto;
 		}
 		.btns {
-			flex: 0 0 12%;
+			flex: 0 0 9rem;
 			display: flex;
 			flex-direction: column;
 			gap: 0.5rem;
+			align-items: stretch;
 
 			button {
 				height: 2.5rem;
@@ -114,7 +115,7 @@ x-queryagent {
 				border-radius: 8px;
 				cursor: pointer;
 				width: auto;
-				align-self: flex-start;
+				margin-right: 4rem;
 			}
 			button:hover {
 				box-shadow: 0 0 0px 1px black;
