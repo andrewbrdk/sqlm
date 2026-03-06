@@ -47,7 +47,7 @@ type Config struct {
 	openRouterModel    string
 	execDB             string
 	logFile            string
-	contextDir         string
+	contextPath        string
 	slackSigningSecret string
 }
 
@@ -132,8 +132,8 @@ func initConfig() {
 	if CONF.logFile == "" {
 		errorLog.Printf("QUERYAGENT_LOG_FILE is not set. Logging is disabled.")
 	}
-	CONF.contextDir = os.Getenv("QUERYAGENT_CONTEXT_DIR")
-	if CONF.contextDir == "" {
+	CONF.contextPath = os.Getenv("QUERYAGENT_CONTEXT_PATH")
+	if CONF.contextPath == "" {
 		errorLog.Printf("No context directory configured.")
 	}
 	CONF.slackSigningSecret = os.Getenv("QUERYAGENT_SLACK_SIGNING_SECRET")
@@ -181,7 +181,7 @@ func buildLLMMessages(msg string) []LLMMessage {
 				"If requirements are ambiguous, still return valid JSON and put clarification needs in 'outline'.`,
 		},
 	}
-	contextMessages := loadContext(CONF.contextDir)
+	contextMessages := loadContext(CONF.contextPath)
 	for _, contextMsg := range contextMessages {
 		out = append(out, LLMMessage{
 			Role:    "system",
@@ -195,14 +195,27 @@ func buildLLMMessages(msg string) []LLMMessage {
 	return out
 }
 
-func loadContext(dirPath string) []string {
-	if dirPath == "" {
+func loadContext(contextPath string) []string {
+	if contextPath == "" {
 		return []string{}
 	}
-	//todo: search
-	entries, err := os.ReadDir(dirPath)
+	info, err := os.Stat(contextPath)
 	if err != nil {
-		infoLog.Printf("Context directory not found or not readable: %s", dirPath)
+		infoLog.Printf("Context path not found or not readable: %s", contextPath)
+		return []string{}
+	}
+	if !info.IsDir() {
+		data, err := os.ReadFile(contextPath)
+		if err != nil {
+			errorLog.Printf("Failed to read context file %s: %v", contextPath, err)
+			return []string{}
+		}
+		infoLog.Printf("Loaded context from %s", contextPath)
+		return []string{string(data)}
+	}
+	entries, err := os.ReadDir(contextPath)
+	if err != nil {
+		infoLog.Printf("Context directory not found or not readable: %s", contextPath)
 		return []string{}
 	}
 	var messages []string
@@ -210,7 +223,7 @@ func loadContext(dirPath string) []string {
 		if entry.IsDir() {
 			continue
 		}
-		filePath := filepath.Join(dirPath, entry.Name())
+		filePath := filepath.Join(contextPath, entry.Name())
 		data, err := os.ReadFile(filePath)
 		if err != nil {
 			errorLog.Printf("Failed to read context file %s: %v", filePath, err)

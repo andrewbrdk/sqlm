@@ -21,7 +21,7 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL}
       QUERYAGENT_EXEC_DB: postgres://pguser:password123@postgres:5432/queryagent?sslmode=disable
-      QUERYAGENT_CONTEXT_DIR: /app/context
+      QUERYAGENT_CONTEXT_PATH: /app/context/example.sql
       QUERYAGENT_LOG_FILE: /app/logs/queryagent.log
       #QUERYAGENT_CONF: /app/queryagent.toml
       #QUERYAGENT_PORT: 8080
