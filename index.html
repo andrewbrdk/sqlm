@@ -123,7 +123,7 @@ class XQueryagent extends HTMLElement {
 				<textarea id="sqlcode" class="mainarea"></textarea>
 				<div class="btns">
 					<button id="copysql" type="button">Copy</button>
-					<button id="executesql" type="button">Execute</button>
+					<button id="executesql" type="button">Run</button>
 					<button id="fixsql" type="button" title="Send the message, query, and execution error to the LLM to generate a new query.">Fix</button>
 				</div>
 			</section>
@@ -237,8 +237,6 @@ class XQueryagent extends HTMLElement {
 	async executeSQLForMessage() {
 		const button = this.querySelector("#executesql");
 		button.disabled = true;
-		const oldLabel = button.textContent;
-		button.textContent = "Executing...";
 		this.#execstatusmsg.innerHTML = "";
 		this.#execstatus.hidden = false;
 		this.#exec.hidden = true;
@@ -246,7 +244,6 @@ class XQueryagent extends HTMLElement {
 		if (!sql) {
 			this.#execstatusmsg.innerHTML = `<div class="errmsg">No SQL to execute.</div>`;
 			button.disabled = false;
-			button.textContent = oldLabel;
 			return;
 		}
 
@@ -269,7 +266,6 @@ class XQueryagent extends HTMLElement {
 			this.#execstatusmsg.innerHTML = `<div class="errmsg">Execution failed.</div>`;
 		} finally {
 			button.disabled = false;
-			button.textContent = oldLabel;
 		}
 	}
 
